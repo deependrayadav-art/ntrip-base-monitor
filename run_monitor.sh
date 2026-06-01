@@ -6,11 +6,15 @@
 #
 # Env: NTRIP_IP NTRIP_PORT NTRIP_USER NTRIP_PASS [NTRIP_TIMEOUT]
 #      RESEND_API_KEY ALERT_FROM ALERT_TO
+#      APPS_SCRIPT_URL APPS_SCRIPT_SECRET   (Google Sheet logging via Apps Script)
 set -uo pipefail
 
 STATE_DIR="state"
 mkdir -p "$STATE_DIR"
 TS="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+TS_IST="$(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S')"
+TIMEOUT="${NTRIP_TIMEOUT:-12}"
+ROWS_FILE="$(mktemp)"; : > "$ROWS_FILE"
 
 first_run=true
 if ls -A "$STATE_DIR" 2>/dev/null | grep -vq '^\.gitkeep$'; then first_run=false; fi
@@ -41,6 +45,18 @@ while IFS= read -r line; do
   sleep 4   # space out connections so the caster releases the prior session
   echo "[$mount] $prev -> $now :: $detail"
 
+  # --- metrics row for the Google Sheet (from the same probe) ---
+  frames="$(printf '%s\n' "$OUT" | sed -n 's/^FRAMES=//p')"; case "$frames" in ''|*[!0-9]*) frames=0 ;; esac
+  bytes="$(printf '%s\n' "$OUT" | sed -n 's/^BYTES=//p')";   case "$bytes"  in ''|*[!0-9]*) bytes=0 ;; esac
+  metrics="$(printf '%s\n' "$OUT" | sed -n 's/^METRICS=//p')"
+  echo "$metrics" | jq -e . >/dev/null 2>&1 || metrics='{"sats_total":0,"sats_gps":0,"sats_glo":0,"sats_gal":0,"sats_bds":0,"sats_qzs":0,"lat":"","lon":"","height_m":""}'
+  data_rate=$(( bytes / TIMEOUT ))
+  jq -nc --arg ts "$TS" --arg tsist "$TS_IST" --arg st "$mount" --arg status "$now" \
+    --argjson bytes "$bytes" --argjson rate "$data_rate" --argjson frames "$frames" \
+    --argjson metrics "$metrics" --arg detail "$detail" \
+    '{ts_utc:$ts, ts_ist:$tsist, station:$st, status:$status, rtcm_bytes:$bytes,
+      data_rate_bps:$rate, frames:$frames, detail:$detail} + $metrics' >> "$ROWS_FILE"
+
   was_h=false; [ "$prev" = "UP" ] && was_h=true
   is_h=false;  [ "$now"  = "UP" ] && is_h=true
   if [ "$prev" = "UNKNOWN" ] || [ "$was_h" != "$is_h" ]; then
@@ -50,6 +66,18 @@ while IFS= read -r line; do
 done < mounts.txt
 
 echo "Summary: $up/$total UP; ${#changes[@]} change(s) this run."
+
+# --- Log every station's metrics to the Google Sheet (Apps Script web app) ---
+if [ -n "${APPS_SCRIPT_URL:-}" ] && [ -n "${APPS_SCRIPT_SECRET:-}" ]; then
+  ROWS_JSON="$(jq -s '.' "$ROWS_FILE")"
+  PAYLOAD="$(jq -n --arg secret "$APPS_SCRIPT_SECRET" --argjson rows "$ROWS_JSON" '{secret:$secret, rows:$rows}')"
+  SCODE="$(curl -s -L -m 30 -o /tmp/sheets.out -w '%{http_code}' -X POST "$APPS_SCRIPT_URL" \
+    -H 'Content-Type: application/json' -d "$PAYLOAD")"
+  echo "Sheet log HTTP $SCODE: $(head -c 300 /tmp/sheets.out)"
+else
+  echo "APPS_SCRIPT_URL/SECRET not set — skipping Google Sheet logging."
+fi
+
 [ "${#changes[@]}" -eq 0 ] && { echo "No health changes; no e-mail."; exit 0; }
 [ -z "${RESEND_API_KEY:-}" ] && { echo "No RESEND_API_KEY; skipping e-mail."; exit 0; }
 

@@ -79,5 +79,15 @@ else
   status="DOWN"; detail="reachable but no valid RTCM (http=${http} size=${size} frames=${frames} rc=${curl_rc})"
 fi
 
+# Decode richer metrics (satellites, base position) from the SAME captured
+# stream — no extra connection. Falls back to zeros/blanks on non-RTCM data.
+metrics='{"sats_total":0,"sats_gps":0,"sats_glo":0,"sats_gal":0,"sats_bds":0,"sats_qzs":0,"lat":"","lon":"","height_m":""}'
+if [ "$status" = "UP" ] && [ -s "$body" ]; then
+  m="$(python3 decode_metrics.py "$body" 2>/dev/null)" && [ -n "$m" ] && metrics="$m"
+fi
+
 echo "STATUS=$status"
 echo "DETAIL=$detail"
+echo "FRAMES=$frames"
+echo "BYTES=$size"
+echo "METRICS=$metrics"

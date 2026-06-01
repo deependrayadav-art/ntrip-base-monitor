@@ -27,8 +27,13 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       ALERT_FROM: "LEPTON Base Monitor <onboarding@resend.dev>"
       ALERT_TO: "deependra.yadav@leptonsoftware.com"
+      APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+      APPS_SCRIPT_SECRET: ${{ secrets.APPS_SCRIPT_SECRET }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install RTCM decoder
+        run: python3 -m pip install --quiet pyrtcm
 
       - name: Probe all mounts & alert on change
         run: |

@@ -1,19 +1,19 @@
 name: NTRIP base-station monitor
 
-# Runs around the clock. NOTE: GitHub's scheduler granularity is ~5 minutes and
-# runs are best-effort (often delayed under load), so this is "roughly every
-# 5 min", not a guaranteed 1-minute heartbeat.
+# Runs around the clock over every mount in mounts.txt. NOTE: GitHub's scheduler
+# granularity is ~5 minutes and best-effort (runs are often delayed under load),
+# so this is "roughly every 5 min", not a guaranteed 1-minute heartbeat.
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch: {}      # allows manual "Run workflow" for testing
+  workflow_dispatch: {}
 
 concurrency:
   group: ntrip-monitor
   cancel-in-progress: false
 
 permissions:
-  contents: write            # to commit the state file on a status change
+  contents: write            # to commit per-mount state on a status change
 
 jobs:
   probe:
@@ -21,7 +21,6 @@ jobs:
     env:
       NTRIP_IP: "61.247.224.198"
       NTRIP_PORT: "2103"
-      NTRIP_MOUNT: "LEPTON_BASE_BHATINDA"
       NTRIP_USER: "Deependra"
       NTRIP_PASS: ${{ secrets.NTRIP_PASS }}
       NTRIP_TIMEOUT: "12"
@@ -29,92 +28,21 @@ jobs:
       ALERT_FROM: "LEPTON Base Monitor <onboarding@resend.dev>"
       ALERT_TO: "deependra.yadav@leptonsoftware.com"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Probe the caster
-        id: probe
+      - name: Probe all mounts & alert on change
         run: |
-          chmod +x check_ntrip.sh
-          OUT="$(./check_ntrip.sh)"
-          echo "$OUT"
-          STATUS="$(printf '%s\n' "$OUT" | sed -n 's/^STATUS=//p')"
-          DETAIL="$(printf '%s\n' "$OUT" | sed -n 's/^DETAIL=//p')"
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-          echo "detail=$DETAIL" >> "$GITHUB_OUTPUT"
+          chmod +x check_ntrip.sh run_monitor.sh
+          ./run_monitor.sh
 
-      - name: Compare with previous state & alert on change
-        env:
-          NOW_STATUS: ${{ steps.probe.outputs.status }}
-          NOW_DETAIL: ${{ steps.probe.outputs.detail }}
+      - name: Persist state changes
         run: |
-          set -euo pipefail
-          PREV="UNKNOWN"
-          [ -f state.txt ] && PREV="$(cut -d'|' -f1 state.txt | tr -d '[:space:]')"
-          TS="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "previous=$PREV  now=$NOW_STATUS"
-
-          # Health is binary: only UP is healthy. Alert only when health flips
-          # (or on the very first run) so we don't spam every 5 minutes.
-          was_healthy=false; [ "$PREV" = "UP" ] && was_healthy=true
-          is_healthy=false;  [ "$NOW_STATUS" = "UP" ] && is_healthy=true
-
-          send=false; subject=""; intro=""; color="#d93025"
-          if [ "$PREV" = "UNKNOWN" ]; then
-            send=true
-            if $is_healthy; then
-              subject="✅ Base station monitor active — ${NTRIP_MOUNT} is UP"
-              intro="Monitoring is now live. The base station is currently UP."; color="#188038"
-            else
-              subject="🔴 Base station ${NTRIP_MOUNT} is ${NOW_STATUS}"
-              intro="Monitoring is now live and the base station is currently ${NOW_STATUS}."
-            fi
-          elif [ "$was_healthy" != "$is_healthy" ]; then
-            send=true
-            if $is_healthy; then
-              subject="✅ RECOVERED — base station ${NTRIP_MOUNT} is back UP"
-              intro="The base station has RECOVERED and is broadcasting again."; color="#188038"
-            else
-              subject="🔴 DOWN — base station ${NTRIP_MOUNT} is ${NOW_STATUS}"
-              intro="The base station has gone ${NOW_STATUS}."
-            fi
-          fi
-
-          if $send; then
-            echo "Sending alert e-mail: $subject"
-            HTML="<div style='font-family:Arial,sans-serif;font-size:14px;color:#202124'>
-              <p style='font-size:16px'><b style='color:${color}'>${intro}</b></p>
-              <table style='border-collapse:collapse'>
-                <tr><td style='padding:2px 12px 2px 0;color:#5f6368'>Mount point</td><td><b>${NTRIP_MOUNT}</b></td></tr>
-                <tr><td style='padding:2px 12px 2px 0;color:#5f6368'>Caster</td><td>${NTRIP_IP}:${NTRIP_PORT}</td></tr>
-                <tr><td style='padding:2px 12px 2px 0;color:#5f6368'>Status</td><td><b>${NOW_STATUS}</b> (was ${PREV})</td></tr>
-                <tr><td style='padding:2px 12px 2px 0;color:#5f6368'>Detail</td><td>${NOW_DETAIL}</td></tr>
-                <tr><td style='padding:2px 12px 2px 0;color:#5f6368'>Checked</td><td>${TS}</td></tr>
-              </table>
-              <p style='color:#9aa0a6;font-size:12px'>NTRIP base-station monitor · GitHub Actions</p>
-            </div>"
-            PAYLOAD="$(jq -n \
-              --arg from "$ALERT_FROM" --arg to "$ALERT_TO" \
-              --arg subject "$subject" --arg html "$HTML" \
-              '{from:$from, to:[$to], subject:$subject, html:$html}')"
-            CODE="$(curl -s -o /tmp/resend.out -w '%{http_code}' \
-              -X POST https://api.resend.com/emails \
-              -H "Authorization: Bearer ${RESEND_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD")"
-            echo "Resend HTTP $CODE"; cat /tmp/resend.out; echo
-            [ "$CODE" = "200" ] || [ "$CODE" = "201" ] || { echo "::error::Resend send failed ($CODE)"; exit 1; }
-          else
-            echo "No health change ($PREV -> $NOW_STATUS); no e-mail."
-          fi
-
-          # Persist state only when the status string changes, to avoid commit noise.
-          NEWLINE="${NOW_STATUS}|${TS}|${NOW_DETAIL}"
-          if [ ! -f state.txt ] || [ "$(cat state.txt)" != "$NEWLINE" ]; then
-            printf '%s\n' "$NEWLINE" > state.txt
+          if [ -n "$(git status --porcelain state)" ]; then
             git config user.name  "ntrip-monitor[bot]"
             git config user.email "ntrip-monitor@users.noreply.github.com"
-            git add state.txt
-            git commit -m "state: $NOW_STATUS @ $TS [skip ci]" || true
+            git add state
+            git commit -m "state update @ $(date -u '+%Y-%m-%d %H:%M:%S UTC') [skip ci]" || true
             git push || echo "::warning::state push failed (non-fatal)"
+          else
+            echo "No state changes to commit."
           fi

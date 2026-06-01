@@ -11,8 +11,8 @@ set -uo pipefail
 
 STATE_DIR="state"
 mkdir -p "$STATE_DIR"
-TS="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-TS_IST="$(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S')"
+TS="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"            # ISO-8601 UTC — parses cleanly in Sheets & JS
+TS_IST="$(TZ='Asia/Kolkata' date '+%d %b %Y, %H:%M IST')"  # human label (Sheets won't date-parse it)
 TIMEOUT="${NTRIP_TIMEOUT:-12}"
 ROWS_FILE="$(mktemp)"; : > "$ROWS_FILE"
 
@@ -71,7 +71,10 @@ echo "Summary: $up/$total UP; ${#changes[@]} change(s) this run."
 if [ -n "${APPS_SCRIPT_URL:-}" ] && [ -n "${APPS_SCRIPT_SECRET:-}" ]; then
   ROWS_JSON="$(jq -s '.' "$ROWS_FILE")"
   PAYLOAD="$(jq -n --arg secret "$APPS_SCRIPT_SECRET" --argjson rows "$ROWS_JSON" '{secret:$secret, rows:$rows}')"
-  SCODE="$(curl -s -L -m 30 -o /tmp/sheets.out -w '%{http_code}' -X POST "$APPS_SCRIPT_URL" \
+  # NOTE: no -X POST — Apps Script answers POST with a 302 whose target must be
+  # fetched as GET; forcing POST through the redirect yields 405. -d defaults to
+  # POST for the first hop, then curl follows the 302 as GET to read the result.
+  SCODE="$(curl -s -L -m 30 -o /tmp/sheets.out -w '%{http_code}' "$APPS_SCRIPT_URL" \
     -H 'Content-Type: application/json' -d "$PAYLOAD")"
   echo "Sheet log HTTP $SCODE: $(head -c 300 /tmp/sheets.out)"
 else

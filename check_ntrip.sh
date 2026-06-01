@@ -35,12 +35,28 @@ http="${out%% *}"; size="${out##* }"
 http="${http:-000}"; size="${size:-0}"
 case "$size" in ''|*[!0-9]*) size=0 ;; esac
 
-# RTCM3 frames begin with the 0xD3 preamble; its presence in the first KB means
-# real correction data is flowing => the base is broadcasting.
-has_rtcm=0
-if [ -s "$body" ] && head -c 2048 "$body" | LC_ALL=C grep -qa $'\xd3'; then
-  has_rtcm=1
+# Count well-formed RTCM3 frames by walking the framing: 0xD3 preamble, 10-bit
+# length, payload, 3-byte CRC. A real broadcast chains dozens of frames; an
+# error page / SOURCETABLE blob chains ~none. This avoids false "UP" on a stray
+# 0xD3 byte in non-RTCM data (e.g. an offline mount returning a short blob).
+frames=0
+if [ -s "$body" ]; then
+  frames="$(python3 - "$body" <<'PY' 2>/dev/null || echo 0
+import sys
+b = open(sys.argv[1], "rb").read(); n = len(b); i = 0; f = 0
+while i < n - 5:
+    if b[i] == 0xD3 and (b[i+1] & 0xFC) == 0:   # preamble + 6 reserved bits zero
+        L = ((b[i+1] & 0x03) << 8) | b[i+2]
+        nxt = i + 3 + L + 3
+        if 0 < L <= 1023 and nxt <= n:
+            f += 1; i = nxt; continue
+    i += 1
+print(f)
+PY
+)"
 fi
+frames="${frames:-0}"; case "$frames" in ''|*[!0-9]*) frames=0 ;; esac
+
 # If the requested mount is offline, casters answer with the SOURCETABLE listing.
 is_sourcetable=0
 if head -c 64 "$body" 2>/dev/null | grep -qa "SOURCETABLE" \
@@ -49,18 +65,18 @@ if head -c 64 "$body" 2>/dev/null | grep -qa "SOURCETABLE" \
 fi
 
 status="DOWN"; detail=""
-if [ "$http" = "401" ] || [ "$http" = "403" ]; then
-  status="AUTH_ERROR"; detail="HTTP $http from caster — check NTRIP username/password"
+if [ "$frames" -ge 3 ]; then
+  status="UP"; detail="streaming RTCM (${frames} frames, ${size} bytes in ${TIMEOUT}s, http=${http})"
+elif [ "$http" = "401" ] || [ "$http" = "403" ]; then
+  status="AUTH_ERROR"; detail="HTTP $http from caster — bad credentials OR account/connection limit"
 elif [ "$is_sourcetable" = "1" ]; then
   status="DOWN"; detail="caster reachable but returned SOURCETABLE — mount '$MOUNT' is NOT broadcasting"
-elif [ "$has_rtcm" = "1" ] || { [ "$http" = "200" ] && [ "$size" -gt 50 ]; }; then
-  status="UP"; detail="streaming RTCM (${size} bytes in ${TIMEOUT}s, http=${http})"
 elif [ "$http" = "404" ]; then
   status="DOWN"; detail="HTTP 404 — mount '$MOUNT' not found on caster"
 elif [ "$http" = "000" ] && [ "$size" = "0" ]; then
   status="UNREACHABLE"; detail="no TCP/HTTP response (curl rc=${curl_rc}) — caster down or network/port blocked"
 else
-  status="DOWN"; detail="unexpected response (http=${http} size=${size} rc=${curl_rc}, no RTCM)"
+  status="DOWN"; detail="reachable but no valid RTCM (http=${http} size=${size} frames=${frames} rc=${curl_rc})"
 fi
 
 echo "STATUS=$status"

@@ -28,7 +28,17 @@ while IFS= read -r line; do
   OUT="$(./check_ntrip.sh)"
   now="$(printf '%s\n' "$OUT" | sed -n 's/^STATUS=//p')"; now="${now:-DOWN}"
   detail="$(printf '%s\n' "$OUT" | sed -n 's/^DETAIL=//p')"
+  # Casters often answer rapid back-to-back connects with a transient 401 or
+  # drop; pause and retry once before believing a non-UP result.
+  if [ "$now" = "AUTH_ERROR" ] || [ "$now" = "UNREACHABLE" ]; then
+    sleep 6
+    OUT="$(./check_ntrip.sh)"
+    n2="$(printf '%s\n' "$OUT" | sed -n 's/^STATUS=//p')"; n2="${n2:-DOWN}"
+    d2="$(printf '%s\n' "$OUT" | sed -n 's/^DETAIL=//p')"
+    if [ "$n2" = "UP" ] || [ "$now" != "$n2" ]; then now="$n2"; detail="$d2 (after retry)"; fi
+  fi
   [ "$now" = "UP" ] && up=$((up+1))
+  sleep 4   # space out connections so the caster releases the prior session
   echo "[$mount] $prev -> $now :: $detail"
 
   was_h=false; [ "$prev" = "UP" ] && was_h=true

@@ -1,15 +1,6 @@
 # Mount points monitored 24x7 on caster 61.247.224.198:2103.
 # One per line. '#' starts a comment. Edit freely to add/remove mounts.
 
-# --- Lepton bases ---
 LEPTON_BASE_BHATINDA
 LEPTON_JANAK_AMRITSAR
 Lepton_base_ludhiana          # currently OFF (power outage) — will alert on recovery
-
-# --- Other orgs on the same caster ---
-DBL_BASE_Srinagar
-DBL_JAMMU
-DBL_BASE_RAJOURI
-SNP_JANAK_RTCM3.2
-FARIDABAD_JANAK_RTCM3.0
-ICGAS_DAMAN

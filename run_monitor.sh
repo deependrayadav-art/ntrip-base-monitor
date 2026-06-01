@@ -16,6 +16,15 @@ TS_IST="$(TZ='Asia/Kolkata' date '+%d %b %Y, %H:%M IST')"  # human label (Sheets
 TIMEOUT="${NTRIP_TIMEOUT:-12}"
 ROWS_FILE="$(mktemp)"; : > "$ROWS_FILE"
 
+# DEGRADED thresholds: a mount can be broadcasting yet too weak for a reliable
+# rover RTK fix. Flag DEGRADED when data rate or satellite count falls far below
+# the healthy baseline (~800-1000 B/s, ~36-42 sats). Tuned to avoid false alarms.
+DEGRADED_RATE_BPS=300     # below this sustained, epochs are dropping
+DEGRADED_MIN_SATS=8       # rover needs >=5 common sats; <8 broadcast = risky
+
+# Health tier for alerting: healthy (UP) / degraded / down (everything else).
+tier() { case "$1" in UP) echo healthy ;; DEGRADED) echo degraded ;; *) echo down ;; esac; }
+
 first_run=true
 if ls -A "$STATE_DIR" 2>/dev/null | grep -vq '^\.gitkeep$'; then first_run=false; fi
 
@@ -41,26 +50,37 @@ while IFS= read -r line; do
     d2="$(printf '%s\n' "$OUT" | sed -n 's/^DETAIL=//p')"
     if [ "$n2" = "UP" ] || [ "$now" != "$n2" ]; then now="$n2"; detail="$d2 (after retry)"; fi
   fi
-  [ "$now" = "UP" ] && up=$((up+1))
   sleep 4   # space out connections so the caster releases the prior session
-  echo "[$mount] $prev -> $now :: $detail"
 
-  # --- metrics row for the Google Sheet (from the same probe) ---
+  # --- metrics from the same probe ---
   frames="$(printf '%s\n' "$OUT" | sed -n 's/^FRAMES=//p')"; case "$frames" in ''|*[!0-9]*) frames=0 ;; esac
   bytes="$(printf '%s\n' "$OUT" | sed -n 's/^BYTES=//p')";   case "$bytes"  in ''|*[!0-9]*) bytes=0 ;; esac
   metrics="$(printf '%s\n' "$OUT" | sed -n 's/^METRICS=//p')"
   echo "$metrics" | jq -e . >/dev/null 2>&1 || metrics='{"sats_total":0,"sats_gps":0,"sats_glo":0,"sats_gal":0,"sats_bds":0,"sats_qzs":0,"lat":"","lon":"","height_m":""}'
   data_rate=$(( bytes / TIMEOUT ))
+  sats_total="$(echo "$metrics" | jq -r '.sats_total // 0')"; case "$sats_total" in ''|*[!0-9]*) sats_total=0 ;; esac
+
+  # --- DEGRADED: broadcasting, but too weak for a reliable rover fix ---
+  if [ "$now" = "UP" ]; then
+    if [ "$data_rate" -lt "$DEGRADED_RATE_BPS" ] || { [ "$sats_total" -gt 0 ] && [ "$sats_total" -lt "$DEGRADED_MIN_SATS" ]; }; then
+      now="DEGRADED"
+      detail="$detail | DEGRADED (rate=${data_rate}B/s, sats=${sats_total})"
+    fi
+  fi
+  [ "$now" = "UP" ] && up=$((up+1))
+  echo "[$mount] $prev -> $now :: $detail"
+
+  # row for the Google Sheet (status now reflects DEGRADED)
   jq -nc --arg ts "$TS" --arg tsist "$TS_IST" --arg st "$mount" --arg status "$now" \
     --argjson bytes "$bytes" --argjson rate "$data_rate" --argjson frames "$frames" \
     --argjson metrics "$metrics" --arg detail "$detail" \
     '{ts_utc:$ts, ts_ist:$tsist, station:$st, status:$status, rtcm_bytes:$bytes,
       data_rate_bps:$rate, frames:$frames, detail:$detail} + $metrics' >> "$ROWS_FILE"
 
-  was_h=false; [ "$prev" = "UP" ] && was_h=true
-  is_h=false;  [ "$now"  = "UP" ] && is_h=true
-  if [ "$prev" = "UNKNOWN" ] || [ "$was_h" != "$is_h" ]; then
-    changes+=("$mount|$prev|$now|$detail|$is_h")
+  # --- change detection by health tier (healthy / degraded / down) ---
+  prevTier="$(tier "$prev")"; nowTier="$(tier "$now")"
+  if [ "$prev" = "UNKNOWN" ] || [ "$prevTier" != "$nowTier" ]; then
+    changes+=("$mount|$prev|$now|$detail|$nowTier")
   fi
   printf '%s|%s|%s\n' "$now" "$TS" "$detail" > "$sf"
 done < mounts.txt
@@ -84,11 +104,14 @@ fi
 [ "${#changes[@]}" -eq 0 ] && { echo "No health changes; no e-mail."; exit 0; }
 [ -z "${RESEND_API_KEY:-}" ] && { echo "No RESEND_API_KEY; skipping e-mail."; exit 0; }
 
-any_down=false; rows=""; names=""
+worst="healthy"; rows=""; names=""
 for c in "${changes[@]}"; do
-  IFS='|' read -r m p n d h <<< "$c"
-  [ "$h" = "true" ] || any_down=true
-  col="#188038"; [ "$h" = "true" ] || col="#d93025"
+  IFS='|' read -r m p n d t <<< "$c"
+  case "$t" in
+    down)     col="#d93025"; worst="down" ;;
+    degraded) col="#d97706"; [ "$worst" != "down" ] && worst="degraded" ;;
+    *)        col="#188038" ;;
+  esac
   rows="$rows<tr><td style='padding:5px 12px;border-bottom:1px solid #eee'><b>$m</b></td>"
   rows="$rows<td style='padding:5px 12px;border-bottom:1px solid #eee;color:$col'><b>$n</b></td>"
   rows="$rows<td style='padding:5px 12px;border-bottom:1px solid #eee;color:#5f6368'>was $p</td>"
@@ -96,9 +119,10 @@ for c in "${changes[@]}"; do
   names="$names $m"
 done
 
-if $first_run; then         subject="📡 NTRIP monitor active — $up/$total mounts UP"
-elif $any_down; then        subject="🔴 Base station change —$names"
-else                        subject="✅ Base station recovered —$names"
+if $first_run; then                    subject="📡 NTRIP monitor active — $up/$total mounts UP"
+elif [ "$worst" = "down" ]; then       subject="🔴 Base station DOWN —$names"
+elif [ "$worst" = "degraded" ]; then   subject="🟡 Base station DEGRADED —$names"
+else                                   subject="✅ Base station recovered —$names"
 fi
 
 HTML="<div style='font-family:Arial,sans-serif;font-size:14px;color:#202124'>
@@ -111,7 +135,7 @@ HTML="<div style='font-family:Arial,sans-serif;font-size:14px;color:#202124'>
       <th align='left' style='padding:6px 12px'>Detail</th></tr>
   $rows
   </table>
-  <p style='color:#9aa0a6;font-size:12px'>NTRIP base-station monitor &middot; GitHub Actions &middot; alerts only on up/down change</p>
+  <p style='color:#9aa0a6;font-size:12px'>NTRIP base-station monitor &middot; GitHub Actions &middot; alerts on up / degraded / down change. DEGRADED = broadcasting but &lt;${DEGRADED_RATE_BPS} B/s or &lt;${DEGRADED_MIN_SATS} sats (rover fix at risk)</p>
 </div>"
 
 PAYLOAD="$(jq -n --arg from "$ALERT_FROM" --arg to "$ALERT_TO" --arg s "$subject" --arg h "$HTML" \

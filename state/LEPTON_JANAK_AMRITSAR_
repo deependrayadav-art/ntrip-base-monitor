@@ -1,1 +1,1 @@
-UNREACHABLE|2026-06-02T17:05:25Z|no TCP/HTTP response (curl rc=28) — caster down or network/port blocked
+AUTH_ERROR|2026-06-02T17:10:32Z|HTTP 401 from caster — bad credentials OR account/connection limit

@@ -3,4 +3,4 @@
 
 LEPTON_BASE_BHATINDA
 LEPTON_JANAK_AMRITSAR
-Lepton_base_ludhiana          # currently OFF (power outage) — will alert on recovery
+Lepton_Base_ludhiana          # relocated + renamed 2026-06-02 (was lowercase b)

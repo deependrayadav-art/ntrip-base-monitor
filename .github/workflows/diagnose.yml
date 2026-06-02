@@ -44,6 +44,7 @@ jobs:
                     || awk -F';' '/^STR;/{print $2}' sourcetable.txt | grep -i "$token" | head -1)"
             REAL="${REAL:-$token}"
             echo; echo "########## $token  ->  resolved mount: $REAL ##########"
+            : > stream.bin   # clear prior capture so a failed fetch cannot reuse stale data
             curl -s --http0.9 --max-time "$SAMPLE_SECS" -H "Ntrip-Version: Ntrip/2.0" \
               -A "ntrip-diagnose/1.0" -u "$NTRIP_USER:$NTRIP_PASS" \
               "http://$NTRIP_IP:$NTRIP_PORT/$REAL" -o stream.bin || true

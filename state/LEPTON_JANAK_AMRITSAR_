@@ -1,1 +1,1 @@
-DEGRADED|2026-06-04T10:05:22Z|streaming RTCM (11 frames, 1939 bytes in 12s, http=200) | DEGRADED (rate=161B/s, sats=38)
+DOWN|2026-06-04T10:10:27Z|reachable but no valid RTCM (http=200 size=863 frames=0 rc=0)

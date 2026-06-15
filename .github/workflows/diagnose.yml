@@ -17,7 +17,7 @@ jobs:
     env:
       NTRIP_IP: "61.247.224.198"
       NTRIP_PORT: "2103"
-      NTRIP_USER: "Deependra"
+      NTRIP_USER: ${{ secrets.NTRIP_USER }}
       NTRIP_PASS: ${{ secrets.NTRIP_PASS }}
       SAMPLE_SECS: "15"
       REQUESTED: ${{ github.event.inputs.mounts }}

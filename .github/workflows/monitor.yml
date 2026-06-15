@@ -21,7 +21,7 @@ jobs:
     env:
       NTRIP_IP: "61.247.224.198"
       NTRIP_PORT: "2103"
-      NTRIP_USER: "Deependra"
+      NTRIP_USER: ${{ secrets.NTRIP_USER }}
       NTRIP_PASS: ${{ secrets.NTRIP_PASS }}
       NTRIP_TIMEOUT: "12"
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

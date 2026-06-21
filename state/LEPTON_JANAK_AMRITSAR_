@@ -1,1 +1,1 @@
-UP|2026-06-21T13:20:26Z|streaming RTCM (59 frames, 11813 bytes in 12s, http=200)
+DOWN|2026-06-21T13:25:20Z|reachable but no valid RTCM (http=200 size=0 frames=0 rc=28)

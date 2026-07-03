@@ -1,0 +1,29 @@
+name: NTRIP subscription probe (one-time)
+
+# One-time, manually triggered probe of all CORS subscriptions.
+# Reads the account list from the SUBS_JSON secret (never committed).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run subscription probe
+        env:
+          SUBS_JSON: ${{ secrets.SUBS_JSON }}
+        run: python3 probe_subs.py
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: subscription-results
+          path: |
+            results.json
+            results.csv
+          if-no-files-found: warn

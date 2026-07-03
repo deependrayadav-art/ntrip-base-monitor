@@ -4,6 +4,8 @@ name: NTRIP subscription probe (one-time)
 # Reads the account list from the SUBS_JSON secret (never committed).
 on:
   workflow_dispatch: {}
+  push:
+    branches: [subs-probe]
 
 permissions:
   contents: read

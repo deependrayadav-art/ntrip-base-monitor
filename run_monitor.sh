@@ -125,13 +125,16 @@ if [ -n "${NETWORKVRS_ACCOUNTS:-}" ]; then
       st="${st:-UNKNOWN}"
     fi
     station="RTCM_VRS:$user"
-    if [ "$st" = "AVAILABLE" ]; then
+    if [ "$st" = "AVAILABLE" ] || [ "$st" = "DISABLED" ]; then
+      # Safe to probe: AVAILABLE (free) or DISABLED (pool never hands it out), so
+      # no live rover to collide with. Probing a DISABLED account also reveals
+      # whether it's still valid upstream (auth) vs truly revoked.
       export NTRIP_IP="$VRS_IP" NTRIP_PORT="$VRS_PORT" NTRIP_GGA="$VRS_GGA"
       export NTRIP_USER="$user" NTRIP_PASS="$pass" NTRIP_TIMEOUT="6"
       probe_record "$VRS_MOUNT" "$station"
     else
-      # Not probed (would collide with a live rover or is disabled). Log the pool
-      # status for the dashboard; don't touch probe state or the alert e-mail.
+      # IN_USE (a live rover is on it) or UNKNOWN status — do NOT probe (would
+      # collide / status uncertain). Log the pool status for the dashboard only.
       echo "[$station] (not probed) pool status=$st"
       emit_row "$station" "$st" "not probed — pool status $st" 0 0 0 "$ZERO_METRICS"
     fi

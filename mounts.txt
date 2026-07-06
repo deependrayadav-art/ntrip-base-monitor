@@ -5,9 +5,7 @@ LEPTON_BASE_BHATINDA
 LEPTON_JANAK_AMRITSAR
 Lepton_Base_ludhiana          # relocated + renamed 2026-06-02 (was lowercase b)
 
-# NetworkVRS caster (103.205.244.106:2101) — where pool creds 5/6/100-104 live.
-# VRS mount: needs a GGA position (last field, Punjab ~Bathinda) before it will
-# stream. Probes as DISABLED pool cred rahul.yadav (secrets NETWORKVRS_USER/PASS)
-# so it never contends with the live pool.
-# Override format: MOUNT|IP|PORT|USER_ENV|PASS_ENV|lat,lon
-RTCM_VRS|103.205.244.106|2101|NETWORKVRS_USER|NETWORKVRS_PASS|30.2407,74.9528
+# NOTE: the NetworkVRS RTCM_VRS caster (creds 5/6/100-104) is NOT listed here.
+# run_monitor.sh probes it per-credential, but only for accounts currently
+# AVAILABLE in the pool (via NETWORKVRS_ACCOUNTS + the CORS Credentials sheet),
+# so a probe never collides with a live rover. This file is physical bases only.

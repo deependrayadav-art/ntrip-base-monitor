@@ -25,14 +25,31 @@ DEGRADED_MIN_SATS=8       # rover needs >=5 common sats; <8 broadcast = risky
 # Health tier for alerting: healthy (UP) / degraded / down (everything else).
 tier() { case "$1" in UP) echo healthy ;; DEGRADED) echo degraded ;; *) echo down ;; esac; }
 
+# Default caster — used by any mounts.txt line without an explicit override.
+DEF_IP="${NTRIP_IP:?NTRIP_IP required}"; DEF_PORT="${NTRIP_PORT:?NTRIP_PORT required}"
+DEF_USER="${NTRIP_USER:?NTRIP_USER required}"; DEF_PASS="${NTRIP_PASS:?NTRIP_PASS required}"
+
 first_run=true
 if ls -A "$STATE_DIR" 2>/dev/null | grep -vq '^\.gitkeep$'; then first_run=false; fi
 
 changes=(); up=0; total=0
 while IFS= read -r line; do
-  mount="$(echo "$line" | sed 's/#.*//' | xargs)"
+  clean="$(printf '%s' "$line" | sed 's/#.*//')"
+  [ -z "$(printf '%s' "$clean" | xargs)" ] && continue
+  # Line format: "MOUNT" (default caster) or a pipe-override:
+  #   "MOUNT|IP|PORT|USER_ENV|PASS_ENV|lat,lon"  — for a different caster / VRS.
+  # Empty override fields fall back to the default caster; a lat,lon in the last
+  # field turns on GGA-based probing (VRS mounts).
+  IFS='|' read -r f_mount f_ip f_port f_uenv f_penv f_gga <<< "$clean"
+  mount="$(printf '%s' "$f_mount" | xargs)"
   [ -z "$mount" ] && continue
   total=$((total+1))
+  export NTRIP_IP="$(printf '%s' "${f_ip:-$DEF_IP}" | xargs)"
+  export NTRIP_PORT="$(printf '%s' "${f_port:-$DEF_PORT}" | xargs)"
+  u_env="$(printf '%s' "${f_uenv:-}" | xargs)"; p_env="$(printf '%s' "${f_penv:-}" | xargs)"
+  if [ -n "$u_env" ]; then export NTRIP_USER="${!u_env:-}"; else export NTRIP_USER="$DEF_USER"; fi
+  if [ -n "$p_env" ]; then export NTRIP_PASS="${!p_env:-}"; else export NTRIP_PASS="$DEF_PASS"; fi
+  export NTRIP_GGA="$(printf '%s' "${f_gga:-}" | xargs)"
   safe="$(echo "$mount" | tr -c 'A-Za-z0-9._-' '_')"
   sf="$STATE_DIR/$safe"
   prev="UNKNOWN"; [ -f "$sf" ] && prev="$(cut -d'|' -f1 "$sf" | tr -d '[:space:]')"
@@ -127,7 +144,7 @@ fi
 
 HTML="<div style='font-family:Arial,sans-serif;font-size:14px;color:#202124'>
   <p style='font-size:16px'><b>NTRIP status change</b> &middot; $TS</p>
-  <p style='color:#5f6368'>Caster $NTRIP_IP:$NTRIP_PORT &middot; <b>$up/$total</b> mounts currently UP</p>
+  <p style='color:#5f6368'><b>$up/$total</b> mounts currently UP (across all casters)</p>
   <table style='border-collapse:collapse;font-size:13px'>
     <tr style='background:#f1f3f4'><th align='left' style='padding:6px 12px'>Mount</th>
       <th align='left' style='padding:6px 12px'>Now</th>

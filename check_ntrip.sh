@@ -23,17 +23,29 @@ trap 'rm -f "$body" "$hdr"' EXIT
 # NTRIP v2 request. An active mount streams RTCM and never closes the socket,
 # so curl is EXPECTED to hit --max-time (rc 28) on a healthy station — that is
 # our "UP" signal, not an error. --http0.9 tolerates v1 casters ("ICY 200 OK").
-out="$(curl -s --http0.9 --max-time "$TIMEOUT" \
-        -H "Ntrip-Version: Ntrip/2.0" \
-        -A "NTRIP base-monitor/1.0" \
-        -u "$USER_:$PASS" \
-        -D "$hdr" -o "$body" \
-        -w '%{http_code} %{size_download}' \
-        "http://$IP:$PORT/$MOUNT" 2>/dev/null)"
-curl_rc=$?
-http="${out%% *}"; size="${out##* }"
-http="${http:-000}"; size="${size:-0}"
-case "$size" in ''|*[!0-9]*) size=0 ;; esac
+if [ -n "${NTRIP_GGA:-}" ]; then
+  # VRS mount (e.g. NetworkVRS RTCM_VRS): the caster won't broadcast until it
+  # receives an NMEA GGA position, and curl can't upload a GGA while reading the
+  # stream — so use the small socket client, which writes the raw stream to
+  # $body and prints "HTTP=<code> BYTES=<n>". Downstream logic is unchanged.
+  fres="$(python3 "$(dirname "$0")/ntrip_fetch.py" "$IP" "$PORT" "$MOUNT" "$USER_" "$PASS" "$TIMEOUT" "$NTRIP_GGA" "$body" 2>/dev/null)"
+  curl_rc=$?
+  http="$(printf '%s' "$fres" | sed -n 's/.*HTTP=\([0-9]\{1,\}\).*/\1/p')"; http="${http:-000}"
+  size="$(printf '%s' "$fres" | sed -n 's/.*BYTES=\([0-9]\{1,\}\).*/\1/p')"; size="${size:-0}"
+  : > "$hdr"
+else
+  out="$(curl -s --http0.9 --max-time "$TIMEOUT" \
+          -H "Ntrip-Version: Ntrip/2.0" \
+          -A "NTRIP base-monitor/1.0" \
+          -u "$USER_:$PASS" \
+          -D "$hdr" -o "$body" \
+          -w '%{http_code} %{size_download}' \
+          "http://$IP:$PORT/$MOUNT" 2>/dev/null)"
+  curl_rc=$?
+  http="${out%% *}"; size="${out##* }"
+  http="${http:-000}"; size="${size:-0}"
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
+fi
 
 # Count well-formed RTCM3 frames by walking the framing: 0xD3 preamble, 10-bit
 # length, payload, 3-byte CRC. A real broadcast chains dozens of frames; an

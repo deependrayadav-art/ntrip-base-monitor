@@ -23,6 +23,10 @@ jobs:
       NTRIP_PORT: "2103"
       NTRIP_USER: ${{ secrets.NTRIP_USER }}
       NTRIP_PASS: ${{ secrets.NTRIP_PASS }}
+      # NetworkVRS caster login (DISABLED pool cred rahul.yadav) for the RTCM_VRS
+      # override line in mounts.txt.
+      NETWORKVRS_USER: ${{ secrets.NETWORKVRS_USER }}
+      NETWORKVRS_PASS: ${{ secrets.NETWORKVRS_PASS }}
       NTRIP_TIMEOUT: "12"
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       ALERT_FROM: "LEPTON Base Monitor <onboarding@resend.dev>"

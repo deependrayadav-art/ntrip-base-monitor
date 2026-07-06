@@ -5,8 +5,7 @@ name: NTRIP base-station monitor
 # so this is "roughly every 5 min", not a guaranteed 1-minute heartbeat.
 on:
   schedule:
-    - cron: "0 */6 * * *"   # every 6 hours (00/06/12/18 UTC) — reliable backup;
-                            # the cron-job.org trigger is gated to the same cadence
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 concurrency:

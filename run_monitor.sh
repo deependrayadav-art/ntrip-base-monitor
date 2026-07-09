@@ -88,7 +88,8 @@ probe_record() { # mount station
   printf '%s|%s|%s\n' "$now" "$TS" "$detail" > "$sf"
 }
 
-# ---- 1) Physical-base mounts (default caster) ----
+# ---- 1) Physical-base mounts (default caster) ---- (skipped when targeting one account)
+if [ -z "${ONLY_ACCOUNT:-}" ]; then
 while IFS= read -r line; do
   clean="$(printf '%s' "$line" | sed 's/#.*//')"
   [ -z "$(printf '%s' "$clean" | xargs)" ] && continue
@@ -104,6 +105,7 @@ while IFS= read -r line; do
   export NTRIP_TIMEOUT="$TIMEOUT"
   probe_record "$mount" "$mount"
 done < mounts.txt
+fi
 
 # ---- 2) NetworkVRS RTCM_VRS: probe only AVAILABLE accounts ----
 if [ -n "${NETWORKVRS_ACCOUNTS:-}" ]; then
@@ -116,6 +118,7 @@ if [ -n "${NETWORKVRS_ACCOUNTS:-}" ]; then
   for acct in "${ACCTS[@]}"; do
     user="${acct%%:*}"; pass="${acct#*:}"
     [ -z "$user" ] && continue
+    [ -n "${ONLY_ACCOUNT:-}" ] && [ "$user" != "$ONLY_ACCOUNT" ] && continue
     # current pool status for this username (UNKNOWN if sheet unavailable)
     st="UNKNOWN"
     if [ -n "$CJSON" ]; then
@@ -125,7 +128,7 @@ if [ -n "${NETWORKVRS_ACCOUNTS:-}" ]; then
       st="${st:-UNKNOWN}"
     fi
     station="RTCM_VRS:$user"
-    if [ "$st" = "AVAILABLE" ] || [ "$st" = "DISABLED" ]; then
+    if [ "$st" = "AVAILABLE" ] || [ "$st" = "DISABLED" ] || { [ -n "${ONLY_ACCOUNT:-}" ] && [ "$st" != "IN_USE" ]; }; then
       # Safe to probe: AVAILABLE (free) or DISABLED (pool never hands it out), so
       # no live rover to collide with. Probing a DISABLED account also reveals
       # whether it's still valid upstream (auth) vs truly revoked.

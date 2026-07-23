@@ -1,0 +1,23 @@
+name: CORS prefill watcher
+# Reads the "CORS and device details" sheet and fills Android ID, RTK Start,
+# Validity Upto, Validity Remarks, and RTCM Bytes Health for new rows.
+on:
+  schedule:
+    - cron: "*/5 * * * *"      # GitHub minimum; cron-job.org can trigger tighter
+  workflow_dispatch: {}
+concurrency:
+  group: cors-prefill
+  cancel-in-progress: false
+jobs:
+  prefill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet requests pg8000
+      - name: Run prefill
+        env:
+          PREFILL_APPS_URL: ${{ secrets.PREFILL_APPS_URL }}
+          PREFILL_APPS_SECRET: ${{ secrets.PREFILL_APPS_SECRET }}
+          HFCL_URI: ${{ secrets.HFCL_URI }}
+          PREFILL_LIMIT: "25"
+        run: python3 prefill/prefill.py

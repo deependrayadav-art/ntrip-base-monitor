@@ -128,7 +128,7 @@ if [ -n "${NETWORKVRS_ACCOUNTS:-}" ]; then
       st="${st:-UNKNOWN}"
     fi
     station="RTCM_VRS:$user"
-    if [ "$st" = "AVAILABLE" ] || [ "$st" = "DISABLED" ] || { [ -n "${ONLY_ACCOUNT:-}" ] && [ "$st" != "IN_USE" ]; }; then
+    if [ "$st" = "AVAILABLE" ] || [ "$st" = "DISABLED" ] || { [ -n "${ONLY_ACCOUNT:-}${PROBE_ALL:-}" ] && [ "$st" != "IN_USE" ]; }; then
       # Safe to probe: AVAILABLE (free) or DISABLED (pool never hands it out), so
       # no live rover to collide with. Probing a DISABLED account also reveals
       # whether it's still valid upstream (auth) vs truly revoked.

@@ -13,6 +13,10 @@ on:
         description: "Probe only this NetworkVRS account (blank = all mounts)"
         required: false
         default: ""
+      probe_all:
+        description: "Force-probe every account regardless of pool status (except IN_USE)"
+        required: false
+        default: ""
 
 concurrency:
   group: ntrip-monitor
@@ -36,6 +40,7 @@ jobs:
       CORS_CREDS_SECRET: ${{ secrets.CORS_CREDS_SECRET }}
       NTRIP_TIMEOUT: "12"
       ONLY_ACCOUNT: ${{ github.event.inputs.only_account }}
+      PROBE_ALL: ${{ github.event.inputs.probe_all }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       ALERT_FROM: "LEPTON Base Monitor <onboarding@resend.dev>"
       ALERT_TO: "deependra.yadav@leptonsoftware.com"

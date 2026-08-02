@@ -1,1 +1,1 @@
-UP|2026-08-02T03:32:17Z|streaming RTCM (64 frames, 12096 bytes in 12s, http=200) (after retry)
+AUTH_ERROR|2026-08-02T06:00:54Z|HTTP 401 from caster — bad credentials OR account/connection limit

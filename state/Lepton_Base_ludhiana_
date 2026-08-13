@@ -1,1 +1,1 @@
-UNREACHABLE|2026-08-13T02:27:47Z|no TCP/HTTP response (curl rc=28) — caster down or network/port blocked
+DOWN|2026-08-13T06:01:02Z|reachable but no valid RTCM (http=200 size=970 frames=0 rc=0)

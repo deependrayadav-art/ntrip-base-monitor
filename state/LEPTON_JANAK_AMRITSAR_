@@ -1,1 +1,1 @@
-AUTH_ERROR|2026-08-26T13:03:25Z|HTTP 401 from caster — bad credentials OR account/connection limit
+DOWN|2026-08-26T18:01:08Z|reachable but no valid RTCM (http=200 size=0 frames=0 rc=28)
